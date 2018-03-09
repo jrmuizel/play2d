@@ -367,15 +367,24 @@ fn merge_good(old: &[Shape], new: &[Shape], dirty: Box2d) -> Option<Vec<Shape>> 
         dlog!("new {}", n.id);
         if n.bounds.partially_overlaps(&dirty) {
             dlog!("{} partially overlaps", n.id);
+
+            let mut found_deferred = false;
             if let Some(&d) = defer.get(0) {
                 if d.bounds == n.bounds {
                     defer.remove(0);
+                    found_deferred = true;
                 }
-            } else {
+            }
+            if !found_deferred {
+                dlog!("checking old list");
                 while let Some(o) = oi.next() {
+                    dlog!("found some");
                     if n.bounds == o.bounds {
+                        dlog!("found us {}", o.id);
                         break;
                     } else if o.bounds.contained_by(&dirty) {
+                        dlog!("drop {}", o.id);
+
                         // we can drop these items
                     } else if o.bounds.partially_overlaps(&dirty) {
                         dlog!("defer {}", o.id);
@@ -386,9 +395,13 @@ fn merge_good(old: &[Shape], new: &[Shape], dirty: Box2d) -> Option<Vec<Shape>> 
                                 dlog!("defer {}", o.id);
                                 defer.push(*o);
                             } else {
+                                dlog!("push");
+
                                 result.push(*o);
                             }
                         } else {
+                            dlog!("push");
+
                             result.push(*o);
                         }
                     }
