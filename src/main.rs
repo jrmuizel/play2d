@@ -2,8 +2,8 @@ extern crate permutohedron;
 
 
 macro_rules! dlog {
-    ($($e:expr),*) => { {$(let _ = $e;)*} }
-    //($($t:tt)*) => { println!($($t)*) }
+    //($($e:expr),*) => { {$(let _ = $e;)*} }
+    ($($t:tt)*) => { println!($($t)*) }
 }
 
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
@@ -483,19 +483,19 @@ fn do_merge(s1: &[Shape], s2: &[Shape], s3: &[Shape]) {
     let r1 = s1.clone();
     //p(&r1);
 
-    dlog!("diff1 {}", ids(&d1.1));
+    dlog!("diff1 {:?}", ids(&d1.1));
 
     let r2 = bogo_merge(&r1, &d1.1, d1.0);
-    dlog!("result {}", ids(&r2));
+    dlog!("result {:?}", ids(&r2));
 
 
-    dlog!("diff1 {}", ids(&d2.1));
+    dlog!("diff1 {:?}", ids(&d2.1));
 
     let r3 = bogo_merge(&r2, &d2.1, d2.0);
 
     //print_graph(&r2);
     //print_graph(&d2.1);
-    dlog!("result {}", ids(&r3));
+    dlog!("result {:?}", ids(&r3));
 
     assert!(check_merge(&r2, &d2.1, &r3));
     assert!(equiv(&r3, &s3))
@@ -560,7 +560,9 @@ fn main() {
 
     //do_merge(&vec![A], &vec![A, D, C], &vec![A, B, D, C]); // ms4
     //do_merge(&vec![C, D], &vec![C, B, A, D], &vec![C, B, A, D, E]); // first broke 5
-    do_merge(&vec![A], &vec![A, D, C, E], &vec![A, D, B, C, E]); // first broke 5
+    //do_merge(&vec![A], &vec![A, D, C, E], &vec![A, D, B, C, E]); // second broke 5
+    do_merge(&vec![A, B], &vec![A, D, C, B, E], &vec![A, D, C, E]); // third broke 5
+
 
 
     //return;
