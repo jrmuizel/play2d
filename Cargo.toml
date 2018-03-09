@@ -1,0 +1,7 @@
+[package]
+authors = ["Jeff Muizelaar <jmuizelaar@mozilla.com>"]
+name = "play2d"
+version = "0.1.0"
+
+[dependencies]
+permutohedron = "0.2.4"
