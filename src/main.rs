@@ -45,6 +45,9 @@ struct Box2dOrEmpty {
 }
 
 impl Box2dOrEmpty {
+    fn new() -> Box2dOrEmpty {
+        Box2dOrEmpty{ x1: 0, x2: 0, y1: 0, y2: 0}
+    }
     fn union(&self, other: &Box2d) -> Box2dOrEmpty {
         if self.x1 == self.x2 {
             Box2dOrEmpty {
@@ -62,8 +65,12 @@ impl Box2dOrEmpty {
             }
         }
     }
+    fn empty(&self) -> bool {
+        self.x1 == self.x2
+    }
+    // always returns false if empty
     fn intersects(&self, other: &Box2d) -> bool {
-        if self.x1 == self.x2 { return false }
+        if self.empty() { return false }
         self.x1 < other.x2 &&
             self.x2 > other.x1 &&
             self.y1 < other.y2 &&
@@ -101,7 +108,7 @@ fn build_dag(list: &[Shape]) -> Dag {
 }
 
 fn diff(old: &[Shape], new: &[Shape]) -> (Box2d, Vec<Shape>) {
-    let mut dirty = Box2dOrEmpty{ x1: 0, x2: 0, y1: 0, y2: 0};
+    let mut dirty = Box2dOrEmpty::new();
 
     for i in old {
         if !new.contains(i) {
@@ -121,6 +128,10 @@ fn diff(old: &[Shape], new: &[Shape]) -> (Box2d, Vec<Shape>) {
         }
     }
     (dirty.unwrap(), result)
+}
+
+fn ids(x: &[Shape]) -> Vec<char> {
+    x.iter().map(|x| x.id).collect::<Vec<_>>()
 }
 
 fn p(x: &[Shape]) {
@@ -159,6 +170,7 @@ fn find(hay: &[Shape], needle: Shape) -> Option<usize> {
     hay.iter().position(|x| *x == needle)
 }
 
+// makes sure that 'target' obeys all of the ordering constraints imposed by 'src'
 fn check_ordering(src: &[Shape], target: &[Shape]) -> bool {
     let od = build_dag(src);
     for i in 0..src.len() {
@@ -174,7 +186,6 @@ fn check_ordering(src: &[Shape], target: &[Shape]) -> bool {
         }
     }
     true
-
 }
 
 fn check_merge(old: &[Shape], new: &[Shape], result: &[Shape]) -> bool {
@@ -182,9 +193,10 @@ fn check_merge(old: &[Shape], new: &[Shape], result: &[Shape]) -> bool {
     check_ordering(new, result)
 }
 
-fn bogo_merge(old: &[Shape], new: &[Shape], dirty: Box2d) -> Vec<Shape> {
+#[allow(dead_code)]
+fn bogo_merge_v1(old: &[Shape], new: &[Shape], dirty: Box2d) -> Vec<Shape> {
     let mut result = merge_bad(old, new, dirty);
-    // take a badly merged result and permute it until passes check_merge
+    // take a badly merged result and permutes it until passes check_merge
     {
         let perm = permutohedron::Heap::new(&mut result);
         for data in perm {
@@ -194,6 +206,211 @@ fn bogo_merge(old: &[Shape], new: &[Shape], dirty: Box2d) -> Vec<Shape> {
         }
     }
     return result
+}
+
+fn bogo_merge(old: &[Shape], new: &[Shape], dirty: Box2d) -> Vec<Shape> {
+    let result = merge_good(old, new, dirty);
+    if let Some(result) = result {
+        println!("good");
+        result
+    } else {
+        println!("bad");
+        let mut result = merge_bad(old, new, dirty);
+        // take a badly merged result and permutes it until passes check_merge
+        {
+            let perm = permutohedron::Heap::new(&mut result);
+            for data in perm {
+                if check_merge(old, new, &data) {
+                    return data
+                }
+            }
+        }
+        return result
+    }
+}
+
+fn merge_good_v1(old: &[Shape], new: &[Shape], dirty: Box2d) -> Option<Vec<Shape>> {
+    // as long as we're not swapping the order items we don't need to worry
+    // about intersections
+    let mut result = Vec::new();
+    let mut oi = old.iter();
+    for n in new {
+        if n.bounds.partially_overlaps(&dirty) {
+            while let Some(o) = oi.next() {
+                if n.bounds == o.bounds {
+                    break;
+                } else if o.bounds.contained_by(&dirty) {
+                    // we can drop these items
+                } else if o.bounds.partially_overlaps(&dirty) {
+                    return None
+                } else {
+                    result.push(*o);
+                }
+            }
+        }
+        result.push(*n)
+    }
+    while let Some(o) = oi.next() {
+        if o.bounds.intersects(&dirty) {
+
+        } else {
+            result.push(*o)
+        }
+    }
+    Some(result)
+}
+
+fn merge_good_v2(old: &[Shape], new: &[Shape], dirty: Box2d) -> Option<Vec<Shape>> {
+    // as long as we're not swapping the order items we don't need to worry
+    // about intersections
+    let mut result = Vec::new();
+    let mut oi = old.iter();
+    for n in new {
+        if n.bounds.partially_overlaps(&dirty) {
+            while let Some(o) = oi.next() {
+                if n.bounds == o.bounds {
+                    break;
+                } else if o.bounds.contained_by(&dirty) {
+                    // we can drop these items
+                } else if o.bounds.partially_overlaps(&dirty) {
+                    // find the items that overlap this item
+                    // those will need to move too
+                    let mut oii = oi.clone();
+                    while let Some(oo) = oii.next() {
+                        if o.bounds.intersects(&oo.bounds) {
+                            return None;
+                        }
+                    }
+                } else {
+                    result.push(*o);
+                }
+            }
+        }
+        result.push(*n)
+    }
+    while let Some(o) = oi.next() {
+        if o.bounds.intersects(&dirty) {
+
+        } else {
+            result.push(*o)
+        }
+    }
+    Some(result)
+}
+
+macro_rules! dlog {
+    //($($e:expr),*) => { {$(let _ = $e;)*} }
+    ($($t:tt)*) => { println!($($t)*) }
+}
+
+
+fn merge_good_index(old: &[Shape], new: &[Shape], dirty: Box2d) -> Option<Vec<Shape>> {
+    // as long as we're not swapping the order items we don't need to worry
+    // about intersections
+    let mut result = Vec::new();
+    let mut oi = 0;
+    dlog!("begin merge");
+    for ni in 0..new.len() {
+        let n = new[ni];
+        //println!("{}", n.id);
+        if n.bounds.partially_overlaps(&dirty) {
+            dlog!("{} partially overlaps", n.id);
+            while oi < old.len() {
+                let o = old[oi];
+                dlog!("old {}", o.id);
+                oi+=1;
+                if n.bounds == o.bounds {
+                    break;
+                } else if o.bounds.contained_by(&dirty) {
+                    // we can drop these items
+                } else if o.bounds.partially_overlaps(&dirty) {
+                    dlog!("old partially {}", o.id);
+                    // find the items that overlap this item
+                    // those will need to move too
+                    for oii in oi..old.len() {
+                        let oo = old[oii];
+                        if o.bounds.intersects(&oo.bounds) {
+                            dlog!("intersec");
+                            let odep = oii;
+                            for nii in ni..new.len() {
+
+                            }
+                        }
+                    }
+                } else {
+                    result.push(o);
+                }
+            }
+        }
+        result.push(n)
+    }
+    while oi < old.len() {
+        let o = old[oi];
+        if o.bounds.intersects(&dirty) {
+
+        } else {
+            result.push(o)
+        }
+        oi+=1;
+    }
+    Some(result)
+}
+
+fn merge_good(old: &[Shape], new: &[Shape], dirty: Box2d) -> Option<Vec<Shape>> {
+    let mut result = Vec::new();
+    let mut defer = Vec::new();
+    let mut oi = old.iter();
+    for n in new {
+        if n.bounds.partially_overlaps(&dirty) {
+            while let Some(o) = oi.next() {
+                if n.bounds == o.bounds {
+                    break;
+                } else if o.bounds.contained_by(&dirty) {
+                    // we can drop these items
+                } else if o.bounds.partially_overlaps(&dirty) {
+                    defer.push(*o);
+                } else {
+                    if let Some(&d) = defer.get(0) {
+                        if d.bounds == o.bounds {
+                            defer.remove(0);
+                        } else {
+                            if o.bounds.intersects(&d.bounds) {
+                                defer.push(*o);
+                            } else {
+                                result.push(*o);
+                            }
+                        }
+                    } else {
+                        result.push(*o);
+                    }
+                }
+            }
+        }
+        if let Some(&d) = defer.get(0) {
+            if d.bounds == n.bounds {
+                defer.remove(0);
+            }
+        }
+        result.push(*n);
+    }
+    println!("defer {:?}", defer);
+    while let Some(o) = oi.next() {
+        if o.bounds.intersects(&dirty) {
+
+        } else {
+            if let Some(&d) = defer.get(0) {
+                if o.bounds.intersects(&d.bounds) {
+                    defer.push(*o);
+                } else {
+                    result.push(*o);
+                }
+            } else {
+                result.push(*o);
+            }
+        }
+    }
+    result.append(&mut defer);
+    Some(result)
 }
 
 fn merge_bad(old: &[Shape], new: &[Shape], dirty: Box2d) -> Vec<Shape> {
@@ -243,22 +460,24 @@ fn do_merge(s1: &[Shape], s2: &[Shape], s3: &[Shape]) {
     let d2 = diff(&s2, &s3);
 
     let r1 = s1.clone();
+    p(&r1);
+
+    p(&d1.1);
+
     let r2 = bogo_merge(&r1, &d1.1, d1.0);
+    p(&r2);
+
+    p(&d2.1);
     let r3 = bogo_merge(&r2, &d2.1, d2.0);
 
-    //p(&diff(&s1, &s2).1);
-    //p(&diff(&s2, &s3).1);
-
-    //p(&r1);
-    //p(&r2);
-    //print_graph(&r2);
-    //print_graph(&d2.1);
-    //p(&r3);
+    print_graph(&r2);
+    print_graph(&d2.1);
+    p(&r3);
     assert!(check_merge(&r2, &d2.1, &r3));
     assert!(equiv(&r3, &s3))
 }
 
-fn select(s: i32, list: &[Shape]) -> Vec<Shape> {
+fn choose(s: i32, list: &[Shape]) -> Vec<Shape> {
     let mut result = Vec::new();
     for i in 0..4 {
         if s & (1 << i) != 0 {
@@ -267,6 +486,7 @@ fn select(s: i32, list: &[Shape]) -> Vec<Shape> {
     }
     result
 }
+
 #[allow(non_snake_case)]
 fn do_all_merges() {
     let A = Shape {id: 'A', bounds: Box2d { x1: 250, y1: 50, x2: 350, y2: 150 }};
@@ -278,14 +498,17 @@ fn do_all_merges() {
 
     let perm = permutohedron::Heap::new(&mut list);
 
+    let combination_max = 1<<4;
+
     for d in perm {
-        for is1 in 0..16 {
-            for is2 in 0..16 {
-                for is3 in 0..16 {
+        for is1 in 0..combination_max {
+            for is2 in 0..combination_max {
+                for is3 in 0..combination_max {
+                    // make sure there are differences between the states
                     if is1 != is2 && is2 != is3 {
-                        let s1 = select(is1, &d);
-                        let s2 = select(is2, &d);
-                        let s3 = select(is3, &d);
+                        let s1 = choose(is1, &d);
+                        let s2 = choose(is2, &d);
+                        let s3 = choose(is3, &d);
                         p(&s1);
                         p(&s2);
                         p(&s3);
@@ -296,8 +519,8 @@ fn do_all_merges() {
             }
         }
     }
-
 }
+
 #[allow(non_snake_case)]
 fn main() {
 
@@ -306,17 +529,28 @@ fn main() {
     let C = Shape {id: 'C', bounds: Box2d { x1: 0, y1: 0, x2: 100, y2: 100 }};
     let D = Shape {id: 'D', bounds: Box2d { x1: 80, y1: 20, x2: 220, y2: 120 }};
 
+
+    do_merge(&vec![A], &vec![A, D, C], &vec![A, B, D, C]); // ms4
+    //return;
     //let list = vec![A, B, C, D];
     //print_graph(&list);
-    do_merge(&vec![], &vec![B,A], &vec![B,A,D]);
+    //do_merge(&vec![], &vec![B,A], &vec![B,A,D]);
+    if true {
+        do_merge(&vec![A], &vec![A, C, D], &vec![A, B, D]);
 
-    do_merge(&vec![C, D], &vec![A,B,C,D], &vec![A,B,C]);
-    do_merge(&vec![B, A, D], &vec![C,B,A,D], &vec![C,B,A]);
-    do_merge(&vec![A, B, D], &vec![A,B,C,D], &vec![A,B,C]);
-    do_merge(&vec![A], &vec![A, D, C], &vec![A, B, D, C]);
 
+        do_merge(&vec![C, D], &vec![A, B, C, D], &vec![A, B, C]);
+
+
+        do_merge(&vec![B, A, D], &vec![C, B, A, D], &vec![C, B, A]);
+        do_merge(&vec![A, B, D], &vec![A, B, C, D], &vec![A, B, C]);
+        do_merge(&vec![A], &vec![A, D, C], &vec![A, B, D, C]); // ms4
+        //return;
+
+    }
+    do_merge(&vec![A, B, D], &vec![A, B, C, D], &vec![A, B, C]);
+
+    //return;
     do_all_merges();
-    //let s2_res = vec![C, D, A];
-    //println!("eq; {}", equiv(&s2_res, &s2));
 
 }
