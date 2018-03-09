@@ -2,8 +2,8 @@ extern crate permutohedron;
 
 
 macro_rules! dlog {
-    //($($e:expr),*) => { {$(let _ = $e;)*} }
-    ($($t:tt)*) => { println!($($t)*) }
+    ($($e:expr),*) => { {$(let _ = $e;)*} }
+    //($($t:tt)*) => { println!($($t)*) }
 }
 
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
@@ -395,10 +395,17 @@ fn merge_good(old: &[Shape], new: &[Shape], dirty: Box2d) -> Option<Vec<Shape>> 
                 }
             }
         }
-        if let Some(&d) = defer.get(0) {
-            if d.bounds == n.bounds {
+
+        for di in 0..defer.len() {
+            if defer[di].bounds == n.bounds {
+                dlog!("found {} in defer list at {}", defer[di].id, di);
+                for dii in 0..di {
+                    result.push(defer.remove(0))
+                }
                 defer.remove(0);
             }
+            dlog!("int defer {:?}, result: {:?}", ids(&defer), ids(&result));
+
         }
         result.push(*n);
     }
@@ -476,19 +483,20 @@ fn do_merge(s1: &[Shape], s2: &[Shape], s3: &[Shape]) {
     let r1 = s1.clone();
     //p(&r1);
 
-    println!("diff");
-    p(&d1.1);
+    dlog!("diff1 {}", ids(&d1.1));
 
     let r2 = bogo_merge(&r1, &d1.1, d1.0);
-    p(&r2);
-    println!("diff");
+    dlog!("result {}", ids(&r2));
 
-    p(&d2.1);
+
+    dlog!("diff1 {}", ids(&d2.1));
+
     let r3 = bogo_merge(&r2, &d2.1, d2.0);
 
     //print_graph(&r2);
     //print_graph(&d2.1);
-    p(&r3);
+    dlog!("result {}", ids(&r3));
+
     assert!(check_merge(&r2, &d2.1, &r3));
     assert!(equiv(&r3, &s3))
 }
